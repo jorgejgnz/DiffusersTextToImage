@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from torchsummary import summary
 from transformers import Pipeline
@@ -54,12 +55,15 @@ class BaseModel:
         )
 
     def setup_scheduler(self, args):
-        self.lr_scheduler = get_scheduler(
-            args.lr_scheduler,
-            optimizer=self.optimizer,
-            num_warmup_steps=args.lr_warmup_steps * args.gradient_accumulation_steps,
-            num_training_steps=args.num_train_epochs
-        )
+        if args.lr_scheduler == "reduceonplateau":
+            self.lr_scheduler = ReduceLROnPlateau(self.optimizer, 'min')
+        else:
+            self.lr_scheduler = get_scheduler(
+                args.lr_scheduler,
+                optimizer=self.optimizer,
+                num_warmup_steps=args.lr_warmup_steps * args.gradient_accumulation_steps,
+                num_training_steps=args.num_train_epochs
+            )
 
     def setup_parts(self):
         # load parts, freeze untrainable parts and move parts to device

@@ -116,7 +116,7 @@ accelerate launch generic_train_text_to_image.py \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
 
-'''
+
 export MODEL_TYPE="StableDiffusionLoRA"
 export BATCH_SIZE=1
 export LR_SCHED="cosine"
@@ -146,7 +146,7 @@ accelerate launch generic_train_text_to_image.py \
   #--gradient_checkpointing \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
-'''
+
 
 export BATCH_SIZE=1
 export MODEL_TYPE="DeepFloydIF"
@@ -371,6 +371,37 @@ python generic_train_text_to_image.py \
   #--gradient_accumulation_steps=1 \
   #--resume_from_checkpoint="latest" \
 '''
+
+export MODEL_TYPE="DDPM"
+export LR_SCHED="reduceonplateau"
+export BATCH_SIZE=32
+export LR=1e-04
+export SNR_GAMMA=5.0
+export GRAD_ACC=1
+python generic_train_text_to_image.py \
+  --model_type=$MODEL_TYPE \
+  --pretrained_model_name_or_path="bguisard/stable-diffusion-nano-2-1" \
+  --data_dir=$DATA_DIR \
+  --dataloader_num_workers=0 \
+  --image_column="image" \
+  --class_column="class" \
+  --resolution=64 --random_flip \
+  --train_batch_size=$BATCH_SIZE \
+  --mixed_precision="no" \
+  --num_train_epochs=$EPOCHS \
+  --validation_epochs=1 \
+  --num_validation_samplings=$VAL_SAMPLINGS \
+  --checkpointing_epochs=$CHKPTS_EVERY_EPOCHS \
+  --checkpoints_total_limit=10 \
+  --learning_rate=$LR \
+  --max_grad_norm=1 \
+  --lr_scheduler="${LR_SCHED}" --lr_warmup_steps=0 \
+  --snr_gamma=$SNR_GAMMA \
+  --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
+  --gradient_accumulation_steps=$GRAD_ACC \
+  --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}*${GRAD_ACC}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}" \
+  #--resume_from_checkpoint="latest" \
+  
 
 
 

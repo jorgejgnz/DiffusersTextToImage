@@ -469,13 +469,25 @@ def decode_image(raw_img, to_numpy=True, to_255=False):
         else: image = torch.round(image)
     return image
 
-def validation(some_model, device, dtype, args, val_dataloader, unique_name, metric_models, max_saves=25, loss=-1.0): # num_generations debe ser al menos 500 para ser significativo
+def write_val_log(args, unique_name, train_loss, lr, val_results):
+    # escribe en un fichero nueva linea con (id, fecha-hora, calidad de imagen, CLIPScore)
+    with open(os.path.join(*[args.output_dir, 'validations', 'log.txt']), 'a') as file:
+        datetime_str = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+        file.write(f"(fields:name&date&inference_steps&guidance_sacle&fid&clipscore&mtcnnscore&attestimator&lr&val_loss&train_loss)")
+        file.write(f"\t{unique_name}\t{datetime_str}\t{val_results['num_inference_steps']}\t{val_results['guidance_scale']}")
+        file.write(f"\t{val_results['fid']}\t{val_results['clipscore']}\t{val_results['mtcnn']}\t{val_results['attestimator']}")
+        file.write(f"\t{lr}\t{val_results['loss']}\t{train_loss}\n")
+
+def validation(some_model, device, dtype, args, val_dataloader, unique_name, metric_models, max_saves=25): # num_generations debe ser al menos 500 para ser significativo
 
         print("Performing validation...")
 
+        num_inference_steps = 50
+        guidance_scale =7.5
+
         kwargs = {
-            'num_inference_steps':50, #25,
-            'guidance_scale':7.5, #7.5,
+            'num_inference_steps':num_inference_steps,
+            'guidance_scale':guidance_scale,
             'height':64,
             'width':64
         }
@@ -500,6 +512,7 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
         avg_clipscore = 0.0
         avg_mtcnnscore = 0.0
         avg_attestimator = 0.0
+        avg_val_loss = 0.0
 
         fid = metric_models['fid']
         mtcnn = metric_models['mtcnn']
@@ -540,9 +553,6 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
 
             # CLIPScore
             print("Computing CLIPScore...")
-            
-            print(t_fake)
-            assert False, "STOP!"
             avg_clipscore += calculate_clip_score(t_fake, prompt, to_uint8=True, to_255=True)
 
             # MTCNN
@@ -574,6 +584,12 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
             attestimator_acc = (estimated_atts == target_atts).sum().item() / num_atts
             avg_attestimator += attestimator_acc
 
+            # Val loss
+            print("Computing val loss...")
+            batch["pixel_values"] = batch["pixel_values"].to(device, dtype=dtype)
+            batch["input_classes"] = batch["input_classes"].to(device, dtype=dtype)
+            avg_val_loss += some_model.get_loss(args, batch) / args.gradient_accumulation_steps
+
             # Save
             if sampled_images < min(args.num_validation_samplings, max_saves) + 1:
                 img_file = f"{idx}.jpg"
@@ -593,17 +609,23 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
         avg_clipscore /= sampled_images
         avg_mtcnnscore /= sampled_images
         avg_attestimator /= sampled_images
-
-        # escribe en un fichero nueva linea con (id, fecha-hora, calidad de imagen, CLIPScore)
-        with open(os.path.join(*[args.output_dir, 'validations', 'log.txt']), 'a') as file:
-            datetime_str = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
-            file.write(f"(fields:name&date&inference_steps&guidance_sacle&fid&clipscore&mtcnnscore&attestimator&loss)\t{unique_name}\t{datetime_str}\t{kwargs['num_inference_steps']}\t{kwargs['guidance_scale']}\t{avg_fid}\t{avg_clipscore}\t{avg_mtcnnscore}\t{avg_attestimator}\t{loss}\n")
+        avg_val_loss /= sampled_images
 
         # libera memoria
         del pipeline
         torch.cuda.empty_cache()
 
         print(f"Validation completed! Check results at {save_path}")
+
+        return {
+            'fid':avg_fid,
+            'clipscore':avg_clipscore,
+            'mtcnn':avg_mtcnnscore,
+            'attestimator':avg_attestimator,
+            'loss':avg_val_loss,
+            'num_inference_steps':num_inference_steps,
+            'guidance_scale':guidance_scale
+        }
 
 def save_model(model, output_dir):
     model.save_pretrained(os.path.join(output_dir, model.subfolder))
@@ -918,14 +940,18 @@ def main():
 
     scaler = torch.cuda.amp.GradScaler()
 
-    #validation(some_model, device, main_dtype, args, val_dataloader, f"{some_model.name}_epochNone", metric_models)
-    #some_model.save(args, dtype=main_dtype)
+    # Base eval
+    unique_name = f"{some_model.name}_epochNone"
+    trainable.eval()
+    with torch.no_grad():
+        val_results = validation(some_model, device, main_dtype, args, val_dataloader, unique_name, metric_models)
+    trainable.train()
+    write_val_log(args, unique_name, -1.0, -1.0, val_results)
 
     for epoch in range(first_epoch, args.num_train_epochs):
 
         print(f"Starting epoch {epoch}!")
 
-        trainable.train()
         epoch_loss = 0.0
 
         # Only show the progress bar once on each machine.
@@ -976,15 +1002,24 @@ def main():
             progress_bar.update(1)
             global_step += 1
 
-            logs = {"step_loss": step_loss, "lr": some_model.lr_scheduler.get_last_lr()[0]}
+            last_lr = some_model.optimizer.param_groups[0]['lr']
+            logs = {"step_loss": step_loss, "lr": last_lr} #some_model.lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
-        
-        some_model.lr_scheduler.step() # algo mejor (tmb cambiado en some_model.lr_scheduler)
 
         print(f"Epoch {epoch} completed (step {step+1}/{args.max_train_steps})")
 
         if epoch % args.validation_epochs == 0:
-            validation(some_model, device, main_dtype, args, val_dataloader, f"{some_model.name}_epoch{epoch}", metric_models, loss=epoch_loss)
+            unique_name = f"{some_model.name}_epoch{epoch}"
+            trainable.eval()
+            with torch.no_grad():
+                val_results = validation(some_model, device, main_dtype, args, val_dataloader, unique_name, metric_models)
+            trainable.train()
+            write_val_log(args, unique_name, epoch_loss, last_lr, val_results)
+
+        if args.lr_scheduler == "reduceonplateau":
+            some_model.lr_scheduler.step(val_results['val_loss'])
+        else:
+            some_model.lr_scheduler.step()
 
         if epoch % args.checkpointing_epochs == 0:
             #save_path = os.path.join(args.output_dir, f"checkpoint")
