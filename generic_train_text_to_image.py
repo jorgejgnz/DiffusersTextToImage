@@ -60,7 +60,7 @@ from torchvision import models
 
 from models import BaseModel, StableDiffusion, NanoStableDiffusion, Nano21StableDiffusion, MiniStableDiffusion, StableDiffusionLoRA
 from models import DeepFloydIF, NanoDeepFloydIF, MiniDeepFloydIF, DeepFloydIFLoRA
-from models import VQDiffusion, MyDiffusion, DiT, DiTnoVAE
+from models import VQDiffusion, MyDiffusion, DiT, DiTnoVAE, DDPM
 
 if is_wandb_available():
     import wandb
@@ -441,8 +441,11 @@ def parse_args():
 
 clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
 
-def calculate_clip_score(images, prompts):
-    clip_score = clip_score_fn(images, prompts).detach()
+def calculate_clip_score(t_images, prompts, to_uint8=True, to_255=True):
+    t_images = t_images.clone().detach()
+    if to_255: t_images *= 255
+    if to_uint8: t_images = t_images.to(torch.uint8)
+    clip_score = clip_score_fn(t_images, prompts).detach()
     return float(clip_score)
 
 def binary_string_to_list(bin_str, as_tensor=False):
@@ -454,6 +457,17 @@ def binary_string_to_list(bin_str, as_tensor=False):
             result.append(1.0)
     if as_tensor: result = torch.tensor(result)
     return result
+
+def decode_image(raw_img, to_numpy=True, to_255=False):
+    image = (raw_img / 2 + 0.5).clamp(0, 1)
+    if to_numpy:
+        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
+        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+    if to_255:
+        image *= 255
+        if to_numpy: image = np.round(image)
+        else: image = torch.round(image)
+    return image
 
 def validation(some_model, device, dtype, args, val_dataloader, unique_name, metric_models, max_saves=25, loss=-1.0): # num_generations debe ser al menos 500 para ser significativo
 
@@ -504,7 +518,7 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
                     encoder_hidden_states = pipeline.text_encoder(batch['input_ids'].to(device))[0]
                     image = pipeline(prompt_embeds=encoder_hidden_states, generator=generator, **kwargs).images[0]
                 elif some_model.condition_type == "class":
-                    image = pipeline(class_labels=batch['input_classes'], generator=generator, **kwargs).images[0]
+                    image = pipeline(input_classes=batch['input_classes'], generator=generator, **kwargs).images[0]
                 else:
                     raise NotImplementedError
 
@@ -514,9 +528,10 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
 
             t_image = transforms.PILToTensor()(rgb_image)
             t_image = torch.unsqueeze(t_image,0)
+            t_fake = t_image.to("cpu", dtype=torch.float32)
 
             t_real = batch['pixel_values'].to("cpu", dtype=torch.float32)
-            t_fake = t_image.to("cpu", dtype=torch.float32)
+            t_real = decode_image(t_real, to_numpy=False, to_255=True)
 
             # FID
             print("Updating FID...")
@@ -525,7 +540,10 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
 
             # CLIPScore
             print("Computing CLIPScore...")
-            avg_clipscore += calculate_clip_score(t_fake, prompt)
+            
+            print(t_fake)
+            assert False, "STOP!"
+            avg_clipscore += calculate_clip_score(t_fake, prompt, to_uint8=True, to_255=True)
 
             # MTCNN
             print("Searching faces with MTCNN...")
@@ -539,7 +557,7 @@ def validation(some_model, device, dtype, args, val_dataloader, unique_name, met
             print("Estimating attributes...")
             attestimator.eval()
             with torch.no_grad():
-                estimated_atts = attestimator(t_real)[0]
+                estimated_atts = attestimator(t_fake)[0]
             estimated_atts = (estimated_atts > 0.5).float() # to 1 or 0
             target_atts = batch['input_attributes'][0]
             # Calculate precision only for some attributes ######################################
@@ -638,6 +656,8 @@ def main():
         some_model = DiT()
     elif args.model_type == "DiTnoVAE":
         some_model = DiTnoVAE()
+    elif args.model_type == "DDPM":
+        some_model = DDPM()
     else:
         raise NotImplementedError
 
@@ -899,6 +919,7 @@ def main():
     scaler = torch.cuda.amp.GradScaler()
 
     #validation(some_model, device, main_dtype, args, val_dataloader, f"{some_model.name}_epochNone", metric_models)
+    #some_model.save(args, dtype=main_dtype)
 
     for epoch in range(first_epoch, args.num_train_epochs):
 
@@ -920,6 +941,7 @@ def main():
 
             # Convert images to dtype
             batch["pixel_values"] = batch["pixel_values"].to(main_dtype)
+            batch["input_classes"] = batch["input_classes"].to(main_dtype)
 
             if args.mixed_precision == "no":
                 # Backprop step

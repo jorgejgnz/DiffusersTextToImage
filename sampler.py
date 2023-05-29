@@ -27,7 +27,7 @@ from tqdm.auto import tqdm
 
 import diffusers
 
-from models import NanoStableDiffusion, MiniStableDiffusion, StableDiffusionLoRA
+from models import NanoStableDiffusion, MiniStableDiffusion, StableDiffusionLoRA, MyDiffusion, DDPM
 
 # importing the module
 import json
@@ -49,53 +49,153 @@ def tokenize_caption(some_model, caption):
     )
     return inputs.input_ids[0]
 
-prompts = [
-    "with Hair, without Eyeglasses, Female, Smiling",
-    "with Hair, without Eyeglasses, Male, Serious",
-    "without Hair, with Eyeglasses, Male, Smiling",
-    "with Hair, with Eyeglasses, Female, Serious",
-]
+def parse_args():
+    parser = argparse.ArgumentParser(description="Simple example of a training script.")
+    parser.add_argument(
+        "--main_folder",
+        type=str,
+        default="text"
+    )
+    parser.add_argument(
+        "--experiment",
+        type=str,
+        default="text"
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="text"
+    )
+    parser.add_argument(
+        "--pretrained_model_name_or_path",
+        type=str,
+        default="text"
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="text"
+    )
+    parser.add_argument(
+        "--num_inference_steps",
+        type=int,
+        default=50
+    )
+    parser.add_argument(
+        "--guidance_scale",
+        type=float,
+        default=7.5
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--non_ema_revision",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--gradient_checkpointing",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--mixed_precision",
+        type=str,
+        default="no"
+    )
+    parser.add_argument(
+        "--unet_weights",
+        type=str,
+        default=None
+    )
 
+    args = parser.parse_args()
 
-experiment = "StableDiffusionLoRA_batch512_lr-cosine-1e-04_epochs20_snrgamma5.0"
-save_path = "samples"
+    return args
 
-args = dict2obj({
-    'pretrained_model_name_or_path':"bguisard/stable-diffusion-nano-2-1",
-    'revision':None,
-    'non_ema_revision':None,
-    'gradient_checkpointing':False
-})
+def main():
+    args = parse_args()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+    save_path = "samples"
 
-# get pipeline from pretrained
-some_model = StableDiffusionLoRA()
-some_model.setup_parts(args)
-pipeline = some_model.get_pipeline(args, dtype=torch.float32)
-pipeline.unet.load_attn_procs(f"generic_finetunings_4atts/{experiment}")
-pipeline = pipeline.to(device)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# inference
-kwargs = {
-    'num_inference_steps':100,
-    'guidance_scale':10.0,
-    'height':64,
-    'width':64
-}
+    # get pipeline from pretrained
+    if args.model_type == "StableDiffusionLoRA":
+        some_model = StableDiffusionLoRA()
+    elif args.model_type == "MyDiffusion":
+        block_out_channels = [256,512,768,768]
+        some_model = MyDiffusion(block_out_channels=block_out_channels)
+    elif args.model_type == "DDPM":
+        some_model = DDPM()
 
-with torch.autocast("cuda"):
-    input_ids = []
-    for p in prompts: input_ids.append(tokenize_caption(some_model, p))
-    input_ids = torch.stack(input_ids)
-    print(input_ids.shape)
-    encoder_hidden_states = pipeline.text_encoder(input_ids.to(device))[0]
-    images = pipeline(prompt_embeds=encoder_hidden_states, generator=None, **kwargs).images
+    some_model.setup_parts(args)
+  
+    if args.model_type == "StableDiffusionLoRA":
+        pipeline = some_model.get_pipeline(args, dtype=torch.float32)
+        pipeline.unet.load_attn_procs(f"{args.main_folder}/{args.experiment}")
+    elif args.model_type == "MyDiffusion":
+        pipeline = some_model.get_pipeline(args, dtype=torch.float32, overwrite_current_weights=True)
+    elif args.model_type == "DDPM":
+        pipeline = some_model.get_pipeline(args, dtype=torch.float32, unet_weights=args.unet_weights)
 
-# save image
-save_path = f"samples/{experiment}/inference-steps-{kwargs['num_inference_steps']}_guidance-scale{kwargs['guidance_scale']}"
-if not os.path.exists(save_path):
-    os.makedirs(save_path)
+    pipeline = pipeline.to(device)
 
-for idx, p in enumerate(prompts):
-    images[idx].save(f"{save_path}/{prompts[idx]}.jpg")
+    # inference
+    kwargs = {
+        'num_inference_steps':args.num_inference_steps,
+        'guidance_scale':args.guidance_scale,
+        'height':64,
+        'width':64
+    }
+
+    # save image
+    save_path = f"{args.output_dir}/{args.experiment}/inference-steps-{kwargs['num_inference_steps']}_guidance-scale{kwargs['guidance_scale']}"
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    if some_model.condition_type == "text":
+        prompts = [
+            "with Hair, without Eyeglasses, Female, Smiling",
+            "with Hair, without Eyeglasses, Female, Serious",
+            "with Hair, without Eyeglasses, Male, Smiling",
+            "with Hair, without Eyeglasses, Male, Serious",
+            "with Hair, with Eyeglasses, Female, Smiling",
+            "with Hair, with Eyeglasses, Female, Serious",
+            "with Hair, with Eyeglasses, Male, Smiling",
+            "with Hair, with Eyeglasses, Male, Serious",
+            "without Hair, without Eyeglasses, Female, Smiling",
+            "without Hair, without Eyeglasses, Female, Serious",
+            "without Hair, without Eyeglasses, Male, Smiling",
+            "without Hair, without Eyeglasses, Male, Serious",
+            "without Hair, with Eyeglasses, Female, Smiling",
+            "without Hair, with Eyeglasses, Female, Serious",
+            "without Hair, with Eyeglasses, Male, Smiling",
+            "without Hair, with Eyeglasses, Male, Serious",
+        ]
+    elif some_model.condition_type == "class":
+        num_classes = 16
+        prompts = range(num_classes)
+
+    for p in prompts:
+
+        with torch.autocast("cuda"):
+            if some_model.condition_type == "text":
+                input_ids = [tokenize_caption(some_model, p)]
+                input_ids = torch.stack(input_ids)
+                print(input_ids.shape)
+                encoder_hidden_states = pipeline.text_encoder(input_ids.to(device))[0]
+                images = pipeline(prompt_embeds=encoder_hidden_states, generator=None, **kwargs).images
+            elif some_model.condition_type == "class":
+                input_classes = torch.tensor([p])
+                input_classes = F.one_hot(input_classes, num_classes=num_classes).to(device)
+                images = pipeline(input_classes=input_classes, generator=None, **kwargs).images
+            else:
+                raise NotImplementedError
+
+        images[0].save(f"{save_path}/{p}.jpg")
+
+if __name__ == "__main__":
+    main()

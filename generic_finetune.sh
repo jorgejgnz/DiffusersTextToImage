@@ -116,8 +116,9 @@ accelerate launch generic_train_text_to_image.py \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
 
+'''
 export MODEL_TYPE="StableDiffusionLoRA"
-export BATCH_SIZE=512
+export BATCH_SIZE=1
 export LR_SCHED="cosine"
 export LR=1e-04
 export SNR_GAMMA=5.0
@@ -140,39 +141,12 @@ accelerate launch generic_train_text_to_image.py \
   --max_grad_norm=1 \
   --lr_scheduler="${LR_SCHED}" --lr_warmup_steps=0 \
   --snr_gamma=$SNR_GAMMA \
-  --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}" \
+  --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
+  --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}_TEMPORAL" \
   #--gradient_checkpointing \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
-
-
-export MODEL_TYPE="StableDiffusionLoRA"
-export BATCH_SIZE=64
-export LR_SCHED="constant"
-export LR=1e-04
-accelerate launch generic_train_text_to_image.py \
-  --model_type=$MODEL_TYPE \
-  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2" \
-  --data_dir=$DATA_DIR \
-  --dataloader_num_workers=0 \
-  --image_column="image" \
-  --caption_column="text" \
-  --resolution=64 --random_flip \
-  --train_batch_size=$BATCH_SIZE \
-  --mixed_precision="fp16" \
-  --num_train_epochs=$EPOCHS \
-  --validation_epochs=1 \
-  --num_validation_samplings=$VAL_SAMPLINGS  \
-  --checkpointing_epochs=$CHKPTS_EVERY_EPOCHS \
-  --checkpoints_total_limit=10 \
-  --learning_rate=$LR \
-  --max_grad_norm=1 \
-  --lr_scheduler="${LR_SCHED}" --lr_warmup_steps=0 \
-  --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}_lr${LR}(${LR_SCHED})_epochs${EPOCHS}" \
-  #--gradient_checkpointing \
-  #--gradient_accumulation_steps=4 \
-  #--resume_from_checkpoint="latest" \
- 
+'''
 
 export BATCH_SIZE=1
 export MODEL_TYPE="DeepFloydIF"
@@ -309,7 +283,7 @@ accelerate launch generic_train_text_to_image.py \
 
 export MODEL_TYPE="MyDiffusion"
 export LR_SCHED="cosine"
-export BATCH_SIZE=1 #16
+export BATCH_SIZE=1
 export LR=1e-04
 export SNR_GAMMA=5.0
 export BLOCK_OUT_CHANNELS="256,512,768,768"
@@ -339,9 +313,9 @@ python generic_train_text_to_image.py \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}*${GRAD_ACC}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}_channels${BLOCK_OUT_CHANNELS}" \
   #--gradient_accumulation_steps=1 \
   #--resume_from_checkpoint="latest" \
- 
-'''
-export MODEL_TYPE="StableDiffusionLoRA"
+
+
+export MODEL_TYPE="DDPM"
 export LR_SCHED="cosine"
 export BATCH_SIZE=1 #16
 export LR=1e-04
@@ -349,11 +323,10 @@ export SNR_GAMMA=5.0
 export GRAD_ACC=1
 python generic_train_text_to_image.py \
   --model_type=$MODEL_TYPE \
-  --pretrained_model_name_or_path="bguisard/stable-diffusion-nano-2-1" \
   --data_dir=$DATA_DIR \
   --dataloader_num_workers=0 \
   --image_column="image" \
-  --caption_column="text" \
+  --class_column="class" \
   --resolution=64 --random_flip \
   --train_batch_size=$BATCH_SIZE \
   --mixed_precision="fp16" \
@@ -366,14 +339,12 @@ python generic_train_text_to_image.py \
   --max_grad_norm=1 \
   --lr_scheduler="${LR_SCHED}" --lr_warmup_steps=0 \
   --snr_gamma=$SNR_GAMMA \
-  --block_out_channels=$BLOCK_OUT_CHANNELS \
   --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
   --gradient_accumulation_steps=$GRAD_ACC \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}*${GRAD_ACC}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}" \
+  #--pretrained_model_name_or_path="bguisard/stable-diffusion-nano-2-1" \
   #--resume_from_checkpoint="latest" \
-  
 
-'''
 export MODEL_TYPE="DiTnoVAE"
 export BATCH_SIZE=1
 export LR_SCHED="cosine"

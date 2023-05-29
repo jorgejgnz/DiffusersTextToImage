@@ -4,9 +4,6 @@
 # But not these files...
 !.gitignore
 !pipelines/
-!face_attribute_estimator.py
-!generic_finetune.sh
-!generic_train_text_to_image.py
-!log_plotter.py
-!models.py
-!sampler.py
+!ddpm_torch
+!*.py
+!*.sh

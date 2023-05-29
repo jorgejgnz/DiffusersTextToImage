@@ -348,12 +348,17 @@ class StableDiffusion(BaseModel):
 
         return loss
     
-    def get_pipeline(self, args, accelerator=None, dtype=None):
+    def get_pipeline(self, args, accelerator=None, dtype=None, overwrite_current_weights=True):
 
         if dtype is None:
             dtype = self.get_weight_dtype(accelerator)
 
-        if accelerator is None:
+        if overwrite_current_weights:
+            pipeline = StableDiffusionPipeline.from_pretrained(
+                args.pretrained_model_name_or_path,
+                revision=args.revision,
+            )
+        elif accelerator is None:
             pipeline = StableDiffusionPipeline.from_pretrained(
                 args.pretrained_model_name_or_path,
                 text_encoder=self.text_encoder,
@@ -545,8 +550,8 @@ class StableDiffusionLoRA(StableDiffusion):
     def get_trainable(self):
         return AttnProcsLayers(self.unet.attn_processors)
     
-    def get_pipeline(self, args, accelerator=None, dtype=None):
-        pipeline = super().get_pipeline(args, accelerator=accelerator, dtype=dtype)
+    def get_pipeline(self, args, accelerator=None, dtype=None, overwrite_current_weights=False):
+        pipeline = super().get_pipeline(args, accelerator=accelerator, dtype=dtype, overwrite_current_weights=overwrite_current_weights)
         # scale 0.0 to not use LoRA weights
         # scale 1.0 to use only LoRA weights
         pipeline.cross_attention_kwargs={"scale": 1.0}
@@ -924,7 +929,7 @@ class MyDiffusion(BaseModel):
             up_block_types=['UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'],
             only_cross_attention=False,
             block_out_channels=self.block_out_channels,
-            layers_per_block=2,
+            layers_per_block=3,
             downsample_padding=1,
             mid_block_scale_factor=1,
             act_fn='silu',
@@ -963,12 +968,17 @@ class MyDiffusion(BaseModel):
         if hasattr(args, 'gradient_checkpointing'):
             if args.gradient_checkpointing: self.unet.enable_gradient_checkpointing()
     
-    def get_pipeline(self, args, accelerator=None, dtype=None):
+    def get_pipeline(self, args, accelerator=None, dtype=None, overwrite_current_weights=True):
 
         if dtype is None:
             dtype = self.get_weight_dtype(accelerator)
 
-        if accelerator is None:
+        if overwrite_current_weights:
+            pipeline = MyDiffusionPipeline.from_pretrained(
+                args.pretrained_model_name_or_path,
+                revision=args.revision,
+            )
+        elif accelerator is None:
             pipeline = MyDiffusionPipeline.from_pretrained(
                 args.pretrained_model_name_or_path,
                 text_encoder=self.text_encoder,
@@ -1304,3 +1314,159 @@ class DiTnoVAE(BaseModel):
 
     def load_trainable_model(self, input_dir):
         return Transformer2DModel.from_pretrained(input_dir, subfolder=self.subfolder)
+    
+
+#####################
+# DDPM
+#####################
+
+import types
+from ddpm_torch import UNet as CustomUNet
+from ddpm_torch import CondDDPMPipeline
+
+class DDPM(BaseModel):
+    def __init__(self, name="DDPM", subfolder=None, condition_type="class"):
+        self.name = name
+        if subfolder is None: subfolder = "unet"
+        self.subfolder = subfolder
+        self.condition_type = condition_type
+
+        self.in_channels = 3
+        self.hid_channels = 128
+        self.out_channels = 3
+        self.ch_multipliers = (1,2,4,4)
+        self.num_res_blocks = 2
+        self.apply_attn = (False,True,True,True)
+
+        self.t_embed_dim = None
+        self.c_embed_dim = None
+        self.c_in_dim = 16
+        
+        # for pipeline
+        self.default_sample_size = 64
+        
+        self.unet = None
+        self.noise_scheduler = None
+
+    def setup_parts(self, args):
+        
+        if args.mixed_precision != "no":
+            raise NotImplementedError
+
+        # Load parts
+        self.noise_scheduler = DDPMScheduler.from_pretrained(
+             args.pretrained_model_name_or_path, subfolder="scheduler"
+        )
+        self.unet = self.load_trainable_model(None)
+
+        # Enable gradient checkpointing
+        if hasattr(args, 'gradient_checkpointing') and args.gradient_checkpointing:
+            raise NotImplementedError
+    
+    def setup_accelerator(self, accelerator, train_dataloader):
+        raise NotImplementedError
+    
+    def setup_noaccelerator(self, weight_dtype="fp32", device="cpu"):
+        self.unet = self.unet.to(device, dtype=weight_dtype)
+
+    def get_loss(self, args, batch):
+
+        images = batch["pixel_values"]
+
+        # Sample noise that we'll add to the latents
+        noise = torch.randn_like(images)
+        if args.noise_offset:
+            # https://www.crosslabs.org//blog/diffusion-with-offset-noise
+            noise += args.noise_offset * torch.randn(
+                (images.shape[0], images.shape[1], 1, 1), device=images.device
+            )
+
+        bsz = images.shape[0]
+        # Sample a random timestep for each image
+        timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=images.device)
+        timesteps = timesteps.long()
+
+        # Add noise to the images according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_images = self.noise_scheduler.add_noise(images, noise, timesteps)
+
+        # Get the target for loss depending on the prediction type
+        if self.noise_scheduler.config.prediction_type == "epsilon":
+            target = noise
+        elif self.noise_scheduler.config.prediction_type == "v_prediction":
+            target = self.noise_scheduler.get_velocity(images, noise, timesteps)
+        else:
+            raise ValueError(f"Unknown prediction type {self.noise_scheduler.config.prediction_type}")
+
+        # Predict the noise residual and compute loss
+        c = batch["input_classes"]
+        model_pred = self.unet(noisy_images, timesteps, c)
+
+        #print(f"model_pred.shape:{model_pred.shape}\ntarget.shape:{target.shape}")
+
+        if args.snr_gamma is None:
+            loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+        else:
+            # Compute loss-weights as per Section 3.4 of https://arxiv.org/abs/2303.09556.
+            # Since we predict the noise instead of x_0, the original formulation is slightly changed.
+            # This is discussed in Section 4.2 of the same paper.
+            snr = self.compute_snr(timesteps)
+            mse_loss_weights = (
+                torch.stack([snr, args.snr_gamma * torch.ones_like(timesteps)], dim=1).min(dim=1)[0] / snr
+            )
+            # We first calculate the original loss. Then we mean over the non-batch dimensions and
+            # rebalance the sample-wise losses with their respective loss weights.
+            # Finally, we take the mean of the rebalanced loss.
+            loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
+            loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
+            loss = loss.mean()
+
+        return loss
+
+    def get_pipeline(self, args, accelerator=None, dtype=None, unet_weights=None):
+
+        if dtype is None:
+            dtype = self.get_weight_dtype(accelerator)
+
+        if self.unet is None or unet_weights is not None:
+            self.unet = self.load_trainable_model(unet_weights=unet_weights)
+
+        if accelerator is None:
+            pipeline = CondDDPMPipeline(
+                unet=self.unet,
+                scheduler=DDPMScheduler.from_pretrained(
+                     args.pretrained_model_name_or_path, subfolder="scheduler"
+                )
+            )
+        else:
+            raise NotImplementedError
+
+        return pipeline
+    
+    def load_trainable_model(self, unet_weights=None):
+
+        model = CustomUNet(
+            self.in_channels,
+            self.hid_channels,
+            self.out_channels,
+            self.ch_multipliers,
+            self.num_res_blocks,
+            self.apply_attn,
+            t_embed_dim=self.t_embed_dim,
+            c_embed_dim=self.c_embed_dim,
+            c_in_dim=self.c_in_dim,
+            num_groups=32,
+            drop_rate=0.0,
+            resample_with_conv=True
+        )
+
+        if unet_weights is not None:
+            model.load_state_dict(torch.load(unet_weights), strict=False)
+
+        return model
+    
+    def save(self, args, accelerator=None, dtype=None):
+        # get pipeline
+        pipeline = self.get_pipeline(args, accelerator=accelerator, dtype=dtype)
+        #pipeline.save_pretrained(args.output_dir)
+        torch.save(pipeline.unet.state_dict(), f"{args.output_dir}/unet.pth.tar")
