@@ -1350,7 +1350,7 @@ class DDPM(BaseModel):
 
     def setup_parts(self, args):
         
-        if args.mixed_precision != "no":
+        if hasattr(args,'mixed_precision') and args.mixed_precision != "no":
             raise NotImplementedError
 
         # Load parts

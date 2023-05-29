@@ -1,7 +1,19 @@
 export DATA_DIR="../experimentos2/data/dataset_4atts"
 export ATTESTIMATOR_CHECKPOINT="/home/jorge/UPV/ARF/experimentos2/face_attribute_estimator_output/checkpoint/checkpoint.pth.tar"
 
+export OUTPUT_DIR="re-evaluations/CondDDPM_Untrained"
+export RESULTS_DIR="re-evaluations/CondDDPM_Untrained/samples"
+python re-evaluator.py \
+  --data_dir=$DATA_DIR \
+  --dataloader_num_workers=0 \
+  --resolution=64 \
+  --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
+  --results_dir="${RESULTS_DIR}" \
+  --output_dir="${OUTPUT_DIR}"
+  #--unet_weights=...
 
+
+'''
 export OUTPUT_DIR="re-evaluations/CondDDPM"
 export RESULTS_DIR="../RUNPOD/generic_finetunings_4atts/DDPM_batch256*1_lr-cosine-1e-04_epochs10_snrgamma5.0/validations"
 python re-evaluator.py \
@@ -11,7 +23,8 @@ python re-evaluator.py \
   --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
   --results_dir="${RESULTS_DIR}" \
   --output_dir="${OUTPUT_DIR}"
-  
+  --unet_weights=...
+'''
 
 '''
 export OUTPUT_DIR="re-evaluations/UNet_big_RunPod"

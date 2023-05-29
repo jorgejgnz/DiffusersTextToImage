@@ -60,7 +60,7 @@ from torchvision import models
 
 from PIL import Image
 
-from models import StableDiffusion, StableDiffusionLoRA, MyDiffusion
+from models import StableDiffusion, StableDiffusionLoRA, MyDiffusion, DDPM
 
 if is_wandb_available():
     import wandb
@@ -202,6 +202,17 @@ def parse_args():
     )
     ##############################
     parser.add_argument(
+        "--unet_weights",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=16
+    )
+    ##############################
+    parser.add_argument(
         "--resolution",
         type=int,
         default=512,
@@ -276,19 +287,28 @@ def tokenize_caption(some_model, caption):
     )
     return inputs.input_ids[0]
 
-def generate_sample(some_model, pipeline, prompt, args, device):
+def generate_sample(some_model, pipeline, batch, args, device):
+
     kwargs = {
         'num_inference_steps':50,
         'guidance_scale':7.5,
         'height':64,
         'width':64
     }
+
     with torch.autocast("cuda"):
-        input_ids = [tokenize_caption(some_model, prompt)]
-        input_ids = torch.stack(input_ids)
-        print(input_ids.shape)
-        encoder_hidden_states = pipeline.text_encoder(input_ids.to(device))[0]
-        images = pipeline(prompt_embeds=encoder_hidden_states, generator=None, **kwargs).images
+        if some_model.condition_type == "text":
+            p = batch['input_texts'][0]
+            input_ids = [tokenize_caption(some_model, p)]
+            input_ids = torch.stack(input_ids)
+            print(input_ids.shape)
+            encoder_hidden_states = pipeline.text_encoder(input_ids.to(device))[0]
+            images = pipeline(prompt_embeds=encoder_hidden_states, generator=None, **kwargs).images
+        elif some_model.condition_type == "class":
+            images = pipeline(input_classes=batch['input_classes'], generator=None, **kwargs).images
+        else:
+            raise NotImplementedError
+
     return images[0]
 
 def validation(eval_dir, args, val_dataloader, metric_models): # num_generations debe ser al menos 500 para ser significativo
@@ -519,6 +539,8 @@ def main():
         elif args.model_type == "MyDiffusion":
             block_out_channels = [256,512,768,768]
             some_model = MyDiffusion(block_out_channels=block_out_channels)
+        elif args.model_type == "DDPM":
+            some_model = DDPM()
 
         some_model.setup_parts(args)
     
@@ -529,6 +551,8 @@ def main():
             if args.lora_weights is not None: pipeline.unet.load_attn_procs(args.lora_weights)
         elif args.model_type == "MyDiffusion":
             pipeline = some_model.get_pipeline(args, dtype=torch.float32, overwrite_current_weights=True)
+        elif args.model_type == "DDPM":
+            pipeline = some_model.get_pipeline(args, dtype=torch.float32, unet_weights=args.unet_weights)
 
         pipeline = pipeline.to(device)
 
@@ -542,12 +566,11 @@ def main():
         generated_samples = 0
         for idx, batch in enumerate(val_dataloader):
             assert len(batch["input_texts"]) == 1, "Expected batch of 1"
-            prompt = batch["input_texts"][0]
-            img = generate_sample(some_model, pipeline, prompt, args, device)
+            img = generate_sample(some_model, pipeline, batch, args, device)
             img_file = f"{idx}.jpg"
             img.save(f"{save_path}/{img_file}")
             with open(f"{save_path}/prompts.txt", 'a') as file:
-                file.write(f"{img_file} '{prompt}'\n")
+                file.write(f"{img_file}\t{batch['input_classes'][0]}\t{batch['input_texts'][0]}\n")
             generated_samples += 1
             pbar.update(1)
             if generated_samples >= args.generate_samples:
