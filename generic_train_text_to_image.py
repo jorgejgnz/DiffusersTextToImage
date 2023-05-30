@@ -1017,7 +1017,7 @@ def main():
             write_val_log(args, unique_name, epoch_loss, last_lr, val_results)
 
         if args.lr_scheduler == "reduceonplateau":
-            some_model.lr_scheduler.step(val_results['val_loss'])
+            some_model.lr_scheduler.step(val_results['loss'])
         else:
             some_model.lr_scheduler.step()
 
