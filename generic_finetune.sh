@@ -111,11 +111,9 @@ accelerate launch generic_train_text_to_image.py \
   --max_grad_norm=1 \
   --lr_scheduler="${LR_SCHED}" --lr_warmup_steps=0 \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}_lr${LR}(${LR_SCHED})_epochs${EPOCHS}" \
-  --debug_unet \
   #--gradient_checkpointing \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
-
 
 export MODEL_TYPE="StableDiffusionLoRA"
 export BATCH_SIZE=1
@@ -146,7 +144,6 @@ accelerate launch generic_train_text_to_image.py \
   #--gradient_checkpointing \
   #--gradient_accumulation_steps=4 \
   #--resume_from_checkpoint="latest" \
-
 
 export BATCH_SIZE=1
 export MODEL_TYPE="DeepFloydIF"
@@ -280,7 +277,6 @@ accelerate launch generic_train_text_to_image.py \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}_lrsch-${LR_SCHED}_epochs${EPOCHS}" \
   #--resume_from_checkpoint="latest" \
 
-
 export MODEL_TYPE="MyDiffusion"
 export LR_SCHED="cosine"
 export BATCH_SIZE=1
@@ -313,7 +309,6 @@ python generic_train_text_to_image.py \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}*${GRAD_ACC}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}_channels${BLOCK_OUT_CHANNELS}" \
   #--gradient_accumulation_steps=1 \
   #--resume_from_checkpoint="latest" \
-
 
 export MODEL_TYPE="DDPM"
 export LR_SCHED="cosine"
@@ -371,7 +366,7 @@ python generic_train_text_to_image.py \
   #--gradient_accumulation_steps=1 \
   #--resume_from_checkpoint="latest" \
 '''
-
+'''
 export MODEL_TYPE="DDPM"
 export LR_SCHED="reduceonplateau"
 export BATCH_SIZE=32
@@ -401,7 +396,7 @@ python generic_train_text_to_image.py \
   --gradient_accumulation_steps=$GRAD_ACC \
   --output_dir="${OUTPUT_DIR}/${MODEL_TYPE}_batch${BATCH_SIZE}*${GRAD_ACC}_lr-${LR_SCHED}-${LR}_epochs${EPOCHS}_snrgamma${SNR_GAMMA}" \
   #--resume_from_checkpoint="latest" \
-  
+''' 
 
 
 

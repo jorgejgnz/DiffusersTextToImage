@@ -265,6 +265,23 @@ class StableDiffusion(BaseModel):
         # Enable gradient checkpointing
         if hasattr(args, 'gradient_checkpointing'):
             if args.gradient_checkpointing: self.unet.enable_gradient_checkpointing()
+
+        print("Counting parameters...")
+        param_info = {
+            'text_encoder':{
+                'total':sum(p.numel() for p in self.text_encoder.parameters()),
+                'trainable':sum(p.numel() for p in self.text_encoder.parameters() if p.requires_grad)
+            },
+            'vae':{
+                'total':sum(p.numel() for p in self.vae.parameters()),
+                'trainable':sum(p.numel() for p in self.vae.parameters() if p.requires_grad)
+            },
+            'unet':{
+                'total':sum(p.numel() for p in self.unet.parameters()),
+                'trainable':sum(p.numel() for p in self.unet.parameters() if p.requires_grad)
+            },
+        }
+        pprint(param_info,depth=4)
         
     def setup_accelerator(self, accelerator, train_dataloader):
 
@@ -550,6 +567,23 @@ class StableDiffusionLoRA(StableDiffusion):
 
         print("############################ Después de LoRA (StableDiffusion) ############################")
         #summary(self.unet, input_data=[dummy_noisy_latent, dummy_timesteps, dummy_encoder_hidden_states], depth=12)
+
+        print("Counting parameters...")
+        param_info = {
+            'text_encoder':{
+                'total':sum(p.numel() for p in self.text_encoder.parameters()),
+                'trainable':sum(p.numel() for p in self.text_encoder.parameters() if p.requires_grad)
+            },
+            'vae':{
+                'total':sum(p.numel() for p in self.vae.parameters()),
+                'trainable':sum(p.numel() for p in self.vae.parameters() if p.requires_grad)
+            },
+            'unet':{
+                'total':sum(p.numel() for p in self.unet.parameters()),
+                'trainable':sum(p.numel() for p in self.unet.parameters() if p.requires_grad)
+            },
+        }
+        pprint(param_info,depth=4)
 
     def get_trainable(self):
         return AttnProcsLayers(self.unet.attn_processors)
@@ -971,6 +1005,19 @@ class MyDiffusion(BaseModel):
         # Enable gradient checkpointing
         if hasattr(args, 'gradient_checkpointing'):
             if args.gradient_checkpointing: self.unet.enable_gradient_checkpointing()
+
+        print("Counting parameters...")
+        param_info = {
+            'text_encoder':{
+                'total':sum(p.numel() for p in self.text_encoder.parameters()),
+                'trainable':sum(p.numel() for p in self.text_encoder.parameters() if p.requires_grad)
+            },
+            'unet':{
+                'total':sum(p.numel() for p in self.unet.parameters()),
+                'trainable':sum(p.numel() for p in self.unet.parameters() if p.requires_grad)
+            },
+        }
+        pprint(param_info,depth=4)
     
     def get_pipeline(self, args, accelerator=None, dtype=None, overwrite_current_weights=True):
 
@@ -1366,6 +1413,15 @@ class DDPM(BaseModel):
         # Enable gradient checkpointing
         if hasattr(args, 'gradient_checkpointing') and args.gradient_checkpointing:
             raise NotImplementedError
+        
+        print("Counting parameters...")
+        param_info = {
+            'unet':{
+                'total':sum(p.numel() for p in self.unet.parameters()),
+                'trainable':sum(p.numel() for p in self.unet.parameters() if p.requires_grad)
+            },
+        }
+        pprint(param_info,depth=4)
     
     def setup_accelerator(self, accelerator, train_dataloader):
         raise NotImplementedError

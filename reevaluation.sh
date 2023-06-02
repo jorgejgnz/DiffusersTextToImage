@@ -1,6 +1,17 @@
-export DATA_DIR="../experimentos2/data/dataset_4atts"
+export DATA_DIR="../experimentos2/data/dataset_custom" #"../experimentos2/data/dataset_4atts"
 export ATTESTIMATOR_CHECKPOINT="/home/jorge/UPV/ARF/experimentos2/face_attribute_estimator_output/checkpoint/checkpoint.pth.tar"
 
+export OUTPUT_DIR="re-evaluations/GroundTruth_CLIPcap_Custom"
+python re-evaluator.py \
+  --data_dir=$DATA_DIR \
+  --dataloader_num_workers=0 \
+  --resolution=64 \
+  --attestimator_checkpoint=$ATTESTIMATOR_CHECKPOINT \
+  --output_dir="${OUTPUT_DIR}" \
+  --data_subdir="custom"
+
+
+'''
 export OUTPUT_DIR="re-evaluations/CondDDPM_Untrained"
 export RESULTS_DIR="re-evaluations/CondDDPM_Untrained/samples"
 python re-evaluator.py \
@@ -11,7 +22,7 @@ python re-evaluator.py \
   --results_dir="${RESULTS_DIR}" \
   --output_dir="${OUTPUT_DIR}"
   #--unet_weights=...
-
+'''
 
 '''
 export OUTPUT_DIR="re-evaluations/CondDDPM"

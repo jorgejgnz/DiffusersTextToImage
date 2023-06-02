@@ -100,7 +100,7 @@ class ActuallyIterableDataset(IterableDataset):
                 break
 
     def __len__(self):
-        if self.max >= 0: return self.max
+        if self.max >= 0 and self.max < self.len: return self.max
         else: return self.len
     
     def shuffle(self, buffer_size=10000, seed=42):
@@ -150,6 +150,18 @@ def parse_args():
         type=str,
         default="sd-model-finetuned",
         help="The output directory where the model predictions and checkpoints will be written.",
+    )
+    parser.add_argument(
+        "--data_subdir",
+        type=str,
+        default="validation",
+        help="Folder inside data_dir that contains metadata.jsonl",
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=1000,
+        help="Max number of samples to be evaluated. Use -1 to disable limit",
     )
     ##############################
     parser.add_argument(
@@ -435,8 +447,7 @@ def main():
     dataset = load_dataset(
         "imagefolder",
         data_files={
-            'train': os.path.join(*[data_dir, "train", "**"]),
-            'validation': os.path.join(*[data_dir, "validation", "**"])
+            args.data_subdir: os.path.join(*[data_dir, args.data_subdir, "**"])
         },
         streaming=True
     )
@@ -445,7 +456,7 @@ def main():
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
-    column_names = list(next(iter(dataset["train"])).keys())
+    column_names = list(next(iter(dataset[args.data_subdir])).keys())
 
     # 6. Get the column names for input/target.
     image_column = args.image_column
@@ -487,12 +498,12 @@ def main():
 
     print("Setting data transforms!")
     # Set the training transforms
-    val_dataset = dataset["validation"].map(preprocess_val)
+    val_dataset = dataset[args.data_subdir].map(preprocess_val)
 
     # num_samples = images - metadata.jsonl
-    num_val_samples = len(os.listdir(os.path.join(data_dir,'validation'))) - 1
+    num_val_samples = len(os.listdir(os.path.join(data_dir,args.data_subdir))) - 1
 
-    val_dataset = ActuallyIterableDataset(val_dataset, num_val_samples, max=1024)
+    val_dataset = ActuallyIterableDataset(val_dataset, num_val_samples, max=args.max_samples)
 
     num_classes = 16
     def collate_fn(batch):

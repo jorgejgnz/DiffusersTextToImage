@@ -4,10 +4,10 @@ export NUM_INFERENCE_STEPS=50
 export GUIDANCE_SCALE=7.5
 
 export PRETRAINED_IF_NEEDED="bguisard/stable-diffusion-nano-2-1"
-export MAIN_FOLDER="../RUNPOD/generic_finetunings_4atts"
-export EXPERIMENT="DDPM_batch256*1_lr-cosine-1e-04_epochs10_snrgamma5.0"
+export MAIN_FOLDER="generic_finetunings_4atts"
+export EXPERIMENT="DDPM_batch32*1_lr-reduceonplateau-1e-04_epochs20_snrgamma5.0"
 export MODEL_TYPE="DDPM"
-export UNET_WEIGHTS="../RUNPOD/generic_finetunings_4atts/DDPM_batch256*1_lr-cosine-1e-04_epochs10_snrgamma5.0/unet.pth.tar"
+export UNET_WEIGHTS="generic_finetunings_4atts/DDPM_batch32*1_lr-reduceonplateau-1e-04_epochs20_snrgamma5.0/unet.pth.tar"
 python sampler.py \
   --main_folder="${MAIN_FOLDER}" \
   --experiment="${EXPERIMENT}" \

@@ -683,8 +683,8 @@ def main():
     else:
         raise NotImplementedError
 
-    some_model.setup_parts(args)  
-
+    some_model.setup_parts(args)
+    
     print("Setting device and dtype!")
     main_dtype = torch.float32
     autocast_type = torch.float32
